@@ -162,3 +162,4 @@ data_loader_all.py
 /results/
 /data/
 test.ipynb
+/logs/

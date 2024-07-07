@@ -1,9 +1,10 @@
+from typing import List
 import argparse
-import torch
-from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
+from datetime import datetime
 import random
 import numpy as np
-from typing import List
+import torch
+from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
 
 
 if __name__ == '__main__':
@@ -50,8 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
     parser.add_argument('--batch_size', type=int, default=1024, help='batch size of train input data')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
-    parser.add_argument('--des', type=str, default='test', help='exp description')
-    parser.add_argument('--eval_step', type=int, default=5, help='How often the model is evaluated and saved, and the data to the right of the progress bar is updated')
+    parser.add_argument('--eval_step', type=int, default=10, help='How often the model is evaluated and saved, and the data to the right of the progress bar is updated')
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     # TODO 可以自定义学习率调度 adjust_learning_rate
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
@@ -62,6 +62,9 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=0, help='gpu')
     parser.add_argument('--use_multi_gpu', action='store_true', help='use multiple gpus', default=False)
     parser.add_argument('--devices', type=str, default='0,1,2,3', help='device ids of multile gpus')
+
+    parser.add_argument('--des', type=str, default='test', help='exp description')
+    parser.add_argument('--tensorboard', type=str, default="./logs/", help="Whether to use tensorboard. Set None to disable")
 
     args = parser.parse_args()
 
@@ -79,19 +82,7 @@ if __name__ == '__main__':
     for ii in range(args.itr):
         # setting record of experiments
         exp = Exp_Long_Term_Forecast(args)  # set experiments
-        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_df{}_{}'.format(
-            args.model_id,
-            args.model,
-            args.data,
-            args.features,
-            args.seq_len,
-            args.label_len,
-            args.pred_len,
-            args.d_model,
-            args.n_heads,
-            args.e_layers,
-            args.d_ff,
-            args.des, ii)
+        setting = '{}'.format(datetime.now().strftime("%m%d%H"))
 
         print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
         exp.train(setting)

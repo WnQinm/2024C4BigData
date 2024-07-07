@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 from torch import optim
 import os
-import time
 import warnings
 import numpy as np
 from tqdm import tqdm
@@ -17,6 +16,12 @@ warnings.filterwarnings('ignore')
 class Exp_Long_Term_Forecast(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecast, self).__init__(args)
+        self.writer = None
+        if args.tensorboard is not None and args.tensorboard != "None":
+            from torch.utils.tensorboard import SummaryWriter
+            if not os.path.exists(args.tensorboard):
+                os.makedirs(args.tensorboard)
+            self.writer = SummaryWriter(args.tensorboard)
 
     def _build_model(self):
         model = self.model_dict[self.args.model].Model(self.args).float()
@@ -96,6 +101,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         outputs = self.model(batch_x)
 
                     loss = self._get_loss(outputs, batch_y, criterion)
+                    train_loss.append(loss.item())
+
+                if self.writer is not None:
+                    self.writer.add_scalar(f'epoch{epoch}/Loss/train', loss, i)
+                    self.writer.add_scalar(f'epoch{epoch}/lr', model_optim.param_groups[0]['lr'])
 
                 if (i + 1) % self.args.eval_step == 0:
                     # evaluate
@@ -105,11 +115,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         eval_batch_y = eval_batch_y.float().to(self.device)
                         eval_outputs = self.model(eval_batch_x)
                         eval_loss = self._get_loss(eval_outputs, eval_batch_y, criterion)
-                    if loss.item()<best_loss:
-                        best_loss = loss.item()
+                    if np.mean(train_loss[-self.args.eval_step:])<best_loss:
+                        best_loss = np.mean(train_loss[-self.args.eval_step:])
                         torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_best.pth')
 
-                    pbar.set_postfix(train_loss=loss.item(), eval_loss=eval_loss.item())
+                    if self.writer is not None:
+                        self.writer.add_scalar(f"epoch{epoch}/Loss/val", eval_loss, i)
+                    else:
+                        pbar.set_postfix(train_loss=loss.item(), eval_loss=eval_loss.item())
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
