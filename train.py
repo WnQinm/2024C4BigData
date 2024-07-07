@@ -25,7 +25,9 @@ if __name__ == '__main__':
     parser.add_argument('--features', type=str, default='M',
                         help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 
-    parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+    parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='save path of model checkpoints')
+    parser.add_argument('--ckpt_path', type=str, default="./checkpoints/v1_iTransformer_Meteorology_ftM_sl168_ll2_pl24_dm1024_nh8_el16_df1024_test/checkpoint_0_best.pth",
+                        help='set a path to load model or set None to create a new model')
 
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=168, help='input sequence length')
@@ -46,13 +48,14 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=0, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
     parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
-    parser.add_argument('--batch_size', type=int, default=256, help='batch size of train input data')
+    parser.add_argument('--batch_size', type=int, default=1024, help='batch size of train input data')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
     parser.add_argument('--des', type=str, default='test', help='exp description')
+    parser.add_argument('--eval_step', type=int, default=5, help='How often the model is evaluated and saved, and the data to the right of the progress bar is updated')
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     # TODO 可以自定义学习率调度 adjust_learning_rate
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
-    parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
+    parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=True)
 
     # GPU
     parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')

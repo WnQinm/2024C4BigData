@@ -36,12 +36,22 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         criterion = MSELoss()
         return criterion
 
+    # TODO 这里先直接用后两位做预测(对应dataset后两位是wind和temp)，大概率需要再做处理
+    def _get_loss(self, pred, label, criterion):
+        f_dim = -1 if self.args.features == 'MS' else -2
+        pred = pred[:, :, f_dim:]
+        label = label[:, :, f_dim:]
+        loss = criterion(pred, label)
+        return loss
+
     def train(self, setting):
-        _, train_loader = self._get_data()
+        train_loader, eval_loader = self._get_data()
 
         save_path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(save_path):
             os.makedirs(save_path)
+        elif self.args.ckpt_path is not None and self.args.ckpt_path != "None":
+            self.model.load_state_dict(torch.load(self.args.ckpt_path))
 
         train_steps = len(train_loader)
 
@@ -53,13 +63,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         for epoch in range(self.args.train_epochs):
             train_loss = []
+            best_loss = 100
+            eval_dataloader = iter(eval_loader)
 
             self.model.train()
 
             pbar = tqdm(range(train_steps))
             pbar.set_description(f'Epoch {epoch}')
-
-            best_loss = 100
 
             # (batch_size, seq_len, 4*9+2) (batch_size, pred_len, 2)
             for i, (batch_x, batch_y) in enumerate(train_loader):
@@ -76,11 +86,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         else:
                             outputs = self.model(batch_x)
 
-                        # TODO 这里先直接用后两位做预测(对应dataset后两位是wind和temp)，大概率需要再做处理
-                        f_dim = -1 if self.args.features == 'MS' else -2
-                        outputs = outputs[:, :, f_dim:]
-                        batch_y = batch_y[:, :, f_dim:]
-                        loss = criterion(outputs, batch_y)
+                        loss = self._get_loss(outputs, batch_y, criterion)
                         train_loss.append(loss.item())
                 else:
                     # outputs (batch_size, pred_len, 38)
@@ -89,19 +95,21 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     else:
                         outputs = self.model(batch_x)
 
-                    # TODO 这里先直接用后两位做预测(对应dataset后两位是wind和temp)，大概率需要再做处理
-                    f_dim = -1 if self.args.features == 'MS' else -2
-                    outputs = outputs[:, :, f_dim:]
-                    batch_y = batch_y[:, :, f_dim:]
-                    loss = criterion(outputs, batch_y)
-                    train_loss.append(loss.item())
+                    loss = self._get_loss(outputs, batch_y, criterion)
 
-                if (i + 1) % 10 == 0:
-                    pbar.set_postfix(loss=loss.item())
+                if (i + 1) % self.args.eval_step == 0:
+                    # evaluate
+                    with torch.no_grad():
+                        eval_batch_x, eval_batch_y = next(eval_dataloader)
+                        eval_batch_x = eval_batch_x.float().to(self.device)
+                        eval_batch_y = eval_batch_y.float().to(self.device)
+                        eval_outputs = self.model(eval_batch_x)
+                        eval_loss = self._get_loss(eval_outputs, eval_batch_y, criterion)
+                    if loss.item()<best_loss:
+                        best_loss = loss.item()
+                        torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_best.pth')
 
-                if loss.item()<best_loss:
-                    best_loss = loss.item()
-                    torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_best.pth')
+                    pbar.set_postfix(train_loss=loss.item(), eval_loss=eval_loss.item())
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
