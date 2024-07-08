@@ -11,8 +11,42 @@ def adjust_learning_rate(optimizer, epoch, args):
         }
     elif args.lradj == "cosine":
         lr_adjust = {epoch: args.learning_rate /2 * (1 + math.cos(epoch / args.train_epochs * math.pi))}
+
     if epoch in lr_adjust.keys():
         lr = lr_adjust[epoch]
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
-        print('Updating learning rate to {}'.format(lr))
+        # print('Updating learning rate to {}'.format(lr))
+
+class Scheduler:
+    args = None
+    epoch_lr = None
+    step_lr = None
+    optimizer = None
+
+    @classmethod
+    def _init_param(cls, args, optimizer):
+        cls.args = args
+        cls.epoch_lr = args.learning_rate
+        cls.step_lr = cls.epoch_lr
+        cls.optimizer = optimizer
+
+    @classmethod
+    def epoch_scheduler(cls, *, epoch=None):
+        lradj = cls.args.epoch_lradj
+
+        if epoch is None:
+            if lradj == 'type1':
+                cls.epoch_lr /= 2
+        else:
+            if lradj == 'type1':
+                cls.epoch_lr = cls.args.learning_rate * (0.5 ** ((epoch - 1) // 1))
+            elif lradj == "cosine":
+                cls.epoch_lr = cls.args.learning_rate /2 * (1 + math.cos(epoch / cls.args.train_epochs * math.pi))
+
+        for param_group in cls.optimizer.param_groups:
+            param_group['lr'] = cls.epoch_lr
+
+    @classmethod
+    def step_scheduler(cls, *, step=None):
+        pass
