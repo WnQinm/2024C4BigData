@@ -2,6 +2,7 @@ from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.tools import adjust_learning_rate
 from utils.loss import MSELoss
+from models.BigDataModel import Model
 import torch
 import torch.nn as nn
 from torch import optim
@@ -24,7 +25,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.writer = SummaryWriter(args.tensorboard)
 
     def _build_model(self):
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        model = Model(self.args).float()
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
@@ -41,11 +42,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         criterion = MSELoss()
         return criterion
 
-    # TODO 这里先直接用后两位做预测(对应dataset后两位是wind和temp)，大概率需要再做处理
+    # TODO 后处理(平滑之类的)
     def _get_loss(self, pred, label, criterion):
-        f_dim = -1 if self.args.features == 'MS' else -2
-        pred = pred[:, :, f_dim:]
-        label = label[:, :, f_dim:]
+        assert pred.shape[-1]==2 and label.shape[-1]==2
         loss = criterion(pred, label)
         return loss
 
@@ -55,7 +54,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         save_path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(save_path):
             os.makedirs(save_path)
-        elif self.args.ckpt_path is not None and self.args.ckpt_path != "None":
+        if self.args.ckpt_path is not None and self.args.ckpt_path != "None":
             self.model.load_state_dict(torch.load(self.args.ckpt_path))
 
         train_steps = len(train_loader)
@@ -88,7 +87,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        # outputs (batch_size, pred_len, 38)
+                        # outputs (batch_size, pred_len, feature_len)
                         if self.args.output_attention:
                             outputs = self.model(batch_x)[0]
                         else:
@@ -97,7 +96,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         loss = self._get_loss(outputs, batch_y, criterion)
                         train_loss.append(loss.item())
                 else:
-                    # outputs (batch_size, pred_len, 38)
+                    # outputs (batch_size, pred_len, feature_len)
                     if self.args.output_attention:
                         outputs = self.model(batch_x)[0]
                     else:
@@ -128,7 +127,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     else:
                         pbar.set_postfix(train_loss=loss.item(), eval_loss=eval_loss.item())
 
-                if (i + 1) == (train_steps//5):
+                if (i + 1) % (train_steps//5) == 0:
                     torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_autosave.pth')
 
                 if self.args.use_amp:

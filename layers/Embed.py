@@ -1,22 +1,20 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.utils import weight_norm
-import math
 
 
-class DataEmbedding_inverted(nn.Module):
-    def __init__(self, c_in, d_model, dropout=0.1):
-        super(DataEmbedding_inverted, self).__init__()
-        self.value_embedding = nn.Linear(c_in, d_model)
+class DataEmbedding(nn.Module):
+    def __init__(self, input_dim, output_dim, dropout):
+        super(DataEmbedding, self).__init__()
+        self.embedding = nn.Linear(input_dim, output_dim)
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, x, x_mark):
-        x = x.permute(0, 2, 1)
-        # x: [Batch Variate Time]
-        if x_mark is None:
-            x = self.value_embedding(x)
-        else:
-            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
-        # x: [Batch Variate d_model]
+    def forward(self, x:torch.Tensor, dim:int):
+        # 把指定维度移到最后
+        index = list(range(len(x.shape)))
+        dim = index[dim]
+        index.remove(dim)
+        index.append(dim)
+        x = x.permute(*index)
+
+        x = self.embedding(x)
         return self.dropout(x)

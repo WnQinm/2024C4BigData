@@ -6,9 +6,6 @@ from models import iTransformer
 class Exp_Basic(object):
     def __init__(self, args):
         self.args = args
-        self.model_dict = {
-            'iTransformer': iTransformer,
-        }
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
 

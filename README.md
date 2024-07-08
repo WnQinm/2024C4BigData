@@ -7,8 +7,8 @@
     - iTransformer其余部分
   - fourier attention
     - feature embedding
-    - rfft-attention-irfft
-    - lstm
+    - rfft — feature attention – irfft
+    - lstm 递归预测
 
 ## TODO
 

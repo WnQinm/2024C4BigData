@@ -15,8 +15,6 @@ def invoke(inputs):
     np.random.seed(fix_seed)
 
     args = {
-        'model_id': 'v1',
-        'model': 'iTransformer',
         'data': 'Meteorology',
         'features': 'M',
         'checkpoints': './checkpoints/',

@@ -2,21 +2,21 @@ import torch
 import torch.nn as nn
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import DataEmbedding_inverted
+from layers.Embed import DataEmbedding
 
 
-class Model(nn.Module):
+class iTransformer(nn.Module):
     """
     Paper link: https://arxiv.org/abs/2310.06625
     """
-
     def __init__(self, configs):
-        super(Model, self).__init__()
+        super(iTransformer, self).__init__()
         self.seq_len = configs.seq_len
-        self.pred_len = configs.pred_len
         self.output_attention = configs.output_attention
+
         # Embedding
-        self.enc_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.dropout)
+        self.enc_embedding = DataEmbedding(configs.seq_len, configs.d_model, configs.dropout)
+
         # Encoder
         self.encoder = Encoder(
             [
@@ -28,34 +28,31 @@ class Model(nn.Module):
                     configs.d_ff,
                     dropout=configs.dropout,
                     activation=configs.activation
-                ) for l in range(configs.e_layers)
+                ) for l in range(configs.itrm_e_layers)
             ],
             norm_layer=torch.nn.LayerNorm(configs.d_model)
         )
-        # Decoder
-        self.projection = nn.Linear(configs.d_model, configs.pred_len, bias=True)
 
-    def forecast(self, x_enc):
+        # Decoder
+        self.projection = nn.Linear(configs.d_model, configs.seq_len, dtype=float)
+
+    def forecast(self, x_enc: torch.Tensor):
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_enc /= stdev
 
-        _, _, N = x_enc.shape
+        enc_out = self.enc_embedding(x_enc, 1)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)      # (batch_size, feature_len, d_model)
+        dec_out = self.projection(enc_out).permute(0, 2, 1)         # (batch_size, seq_len, feature_len)
 
-        # Embedding
-        enc_out = self.enc_embedding(x_enc, None)
-        enc_out, attns = self.encoder(enc_out, attn_mask=None)
-        # enc_out (batch_size, 38, d_model)
-
-        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
-        
         # De-Normalization from Non-stationary Transformer
-        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
-        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
         return dec_out
 
     def forward(self, x_enc):
+        # (batch_size, seq_len, feature_len)
         dec_out = self.forecast(x_enc)
-        return dec_out[:, -self.pred_len:, :]  # [B, L, C]
+        return dec_out

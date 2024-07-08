@@ -14,8 +14,7 @@ def data_provider(args):
     data_set = Dataset_Meteorology(
         root_path=args.root_path,
         data_path=args.data_path,
-        size=[args.seq_len, args.label_len, args.pred_len],
-        features=args.features
+        size=[args.seq_len, args.label_len, args.pred_len]
     )
 
     train_size = int(len(data_set) * (1-eval_ratio))

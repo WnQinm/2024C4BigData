@@ -6,12 +6,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class Dataset_Meteorology(Dataset):
-    def __init__(self, root_path, data_path, size=None, features='MS'):
+    def __init__(self, root_path, data_path, size=None):
         self.seq_len = size[0]
         self.label_len = size[1]
         self.pred_len = size[2]
 
-        self.features = features
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
