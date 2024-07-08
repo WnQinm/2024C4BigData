@@ -74,7 +74,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.model.train()
 
             pbar = tqdm(range(train_steps))
-            pbar.set_description(f'Epoch {epoch}')
+            if self.writer is not None:
+                self.writer.add_scalar(f'Progress/epoch', (epoch+1)/self.args.train_epochs, epoch)
+            else:
+                pbar.set_description(f'Epoch {epoch+1}/{self.args.train_epochs}')
 
             # (batch_size, seq_len, 4*9+2) (batch_size, pred_len, 2)
             for i, (batch_x, batch_y) in enumerate(train_loader):
@@ -105,7 +108,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 if self.writer is not None:
                     self.writer.add_scalar(f'epoch{epoch}/Loss/train', loss, i)
-                    self.writer.add_scalar(f'epoch{epoch}/lr', model_optim.param_groups[0]['lr'])
+                    self.writer.add_scalar(f'epoch{epoch}/lr', model_optim.param_groups[0]['lr'], i)
+                    self.writer.add_scalar(f'Progress/step', (i+1)/train_steps, i)
 
                 if (i + 1) % self.args.eval_step == 0:
                     # evaluate
@@ -124,6 +128,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     else:
                         pbar.set_postfix(train_loss=loss.item(), eval_loss=eval_loss.item())
 
+                if (i + 1) == (train_steps//5):
+                    torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_autosave.pth')
+
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
                     scaler.step(model_optim)
@@ -135,7 +142,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 pbar.update(1)
 
             train_loss = np.average(train_loss)
-            print(f"epoch average loss: {train_loss}")
+            print(f"epoch {epoch} average loss: {train_loss}")
             torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_last.pth')
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
