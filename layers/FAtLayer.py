@@ -11,14 +11,14 @@ class FAtLayer(nn.Module):
         assert feature_dim%num_heads==0
         self.att_layer = nn.MultiheadAttention(embed_dim=feature_dim,
                                                num_heads=num_heads,
-                                               batch_first=True)
+                                               batch_first=True,
+                                               dropout=dropout)
 
     def forward(self, x:torch.Tensor):
         # input&output (batch_size, seq_len, feature_dim)
-        x = torch.fft.fft(x, dim=1)
-        x_real = torch.real(x)
-        x_imag = torch.imag(x)
-        x_real, _ = self.att_layer(x_real, x_real, x_real)
-        x_imag, _ = self.att_layer(x_imag, x_imag, x_imag)
-        return torch.fft.ifft(x_real + 1j * x_imag, dim=1)
-
+        x = torch.fft.rfft(x, dim=1)
+        L = x.shape[1]
+        x = torch.cat((torch.real(x), torch.imag(x)), dim=1)
+        x, _ = self.att_layer(x, x, x)
+        x = torch.fft.irfft(x[:, :L, :] + 1j * x[:, L:, :], dim=1)
+        return x.to(torch.float32)

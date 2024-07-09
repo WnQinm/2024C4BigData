@@ -61,13 +61,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+        best_loss = None
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
         for epoch in range(self.args.train_epochs):
             train_loss = []
-            best_loss = 100
             eval_dataloader = iter(eval_loader)
 
             self.model.train()
@@ -118,7 +118,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         eval_batch_y = eval_batch_y.float().to(self.device)
                         eval_outputs = self.model(eval_batch_x)
                         eval_loss = self._get_loss(eval_outputs, eval_batch_y, criterion)
-                    if np.mean(train_loss[-self.args.eval_step:])<best_loss:
+                    if best_loss is None or np.mean(train_loss[-self.args.eval_step:])<best_loss:
                         best_loss = np.mean(train_loss[-self.args.eval_step:])
                         torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_best.pth')
 
@@ -127,7 +127,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     else:
                         pbar.set_postfix(train_loss=loss.item(), eval_loss=eval_loss.item())
 
-                if (i + 1) % (train_steps//5) == 0:
+                if self.args.autosave is not None and (i + 1) % (train_steps * self.args.autosave //100) == 0:
                     torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_autosave.pth')
 
                 if self.args.use_amp:
