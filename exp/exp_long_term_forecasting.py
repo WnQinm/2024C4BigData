@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 import os
-import time
+from tqdm import tqdm
 import warnings
 import numpy as np
 
@@ -15,11 +15,27 @@ warnings.filterwarnings('ignore')
 class Exp_Long_Term_Forecast(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecast, self).__init__(args)
+        self.writer = None
+        if args.tensorboard is not None and args.tensorboard != "None":
+            from torch.utils.tensorboard import SummaryWriter
+            if not os.path.exists(args.tensorboard):
+                os.makedirs(args.tensorboard)
+            self.writer = SummaryWriter(args.tensorboard)
+
+    def get_parameter_number(self, model):
+        total_num = sum(p.numel() for p in model.parameters())
+        trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        return total_num, trainable_num
 
     def _build_model(self):
         model = self.model_dict[self.args.model].Model(self.args).float()
+        if self.args.ckpt_path is not None and self.args.ckpt_path != "None":
+            pretrained_dict = torch.load(self.args.ckpt_path)
+            model.load_state_dict(pretrained_dict)
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
+        param_num = self.get_parameter_number(model)
+        print(f"parameter total {param_num[0]} trainable {param_num[1]}")
         return model
 
     def _get_data(self):
@@ -36,17 +52,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
     def train(self, setting):
         train_data, train_loader = self._get_data()
-
-        path = os.path.join(self.args.checkpoints, setting)
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-        time_now = time.time()
-
         train_steps = len(train_loader)
+
+        save_path = os.path.join(self.args.checkpoints, setting)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+        best_loss = None
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
@@ -55,8 +69,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             iter_count = 0
             train_loss = []
 
+            pbar = tqdm(range(train_steps))
+            self.writer.add_scalar(f'Progress/epoch', (epoch+1)/self.args.train_epochs, epoch)
+
             self.model.train()
-            epoch_time = time.time()
             for i, (batch_x, batch_y) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
@@ -71,9 +87,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         else:
                             outputs = self.model(batch_x)
 
-                        f_dim = -1 if self.args.features == 'MS' else 0
-                        outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                        batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                        if self.args.task == 'wind':
+                            outputs = outputs[:, :, -2:-1]
+                        elif self.args.task == 'temp':
+                            outputs = outputs[:, :, -1:]
+
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
@@ -82,19 +100,24 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     else:
                         outputs = self.model(batch_x)
 
-                    f_dim = -1 if self.args.features == 'MS' else 0
-                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                    if self.args.task == 'wind':
+                        outputs = outputs[:, :, -2:-1]
+                    elif self.args.task == 'temp':
+                        outputs = outputs[:, :, -1:]
+
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
 
-                if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                    iter_count = 0
-                    time_now = time.time()
+                if self.writer is not None:
+                    self.writer.add_scalar(f'epoch{epoch}/Loss/train', train_loss[-1], i)
+                    self.writer.add_scalar(f'Progress/lr', model_optim.param_groups[0]['lr'], i)
+                    self.writer.add_scalar(f'Progress/step', (i+1)/train_steps, i)
+
+                if (i + 1) % 10 == 0:
+                    mean_loss = np.mean(train_loss[-10:])
+                    if best_loss is None or mean_loss<best_loss:
+                        best_loss = mean_loss
+                        torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_best.pth')
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
@@ -104,12 +127,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     loss.backward()
                     model_optim.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-            train_loss = np.average(train_loss)
+                pbar.update(1)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f}".format(
-                epoch + 1, train_steps, train_loss))
-            torch.save(self.model.state_dict(), path + '/' + f'checkpoint_{epoch}.pth')
+            torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint.pth')
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         return self.model

@@ -6,43 +6,47 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class Dataset_Meteorology(Dataset):
-    def __init__(self, root_path, data_path, size=None, features='MS'):
+    def __init__(self, root_path, data_path, task, size=None):
         self.seq_len = size[0]
         self.label_len = size[1]
         self.pred_len = size[2]
+        self.task = task
 
-        self.features = features
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
-        self.stations_num = self.data_x.shape[-1]
-        self.tot_len = len(self.data_x) - self.seq_len - self.pred_len + 1
+        self.stations_num = self.data.shape[1]
+        self.tot_len = len(self.data) - self.seq_len - self.pred_len + 1
 
     def __read_data__(self):
-        data = np.load(os.path.join(self.root_path, self.data_path)) # (T, S, 1)    
-        data = np.squeeze(data) # (T S)
-        era5 = np.load(os.path.join(self.root_path, 'global_data.npy')) 
-        repeat_era5 = np.repeat(era5, 3, axis=0)[:len(data), :, :, :] # (T, 4, 9, S)
-        repeat_era5 = repeat_era5.reshape(repeat_era5.shape[0], -1, repeat_era5.shape[3]) # (T, 36, S)
+        # (T, S, 2)
+        self.data = np.concatenate((np.load(os.path.join(self.root_path, self.data_path[0])),
+                                    np.load(os.path.join(self.root_path, self.data_path[1]))), axis=-1)
 
-        self.data_x = data
-        self.data_y = data
+        era5 = np.load(os.path.join(self.root_path, 'global_data.npy'))
+        repeat_era5 = np.repeat(era5, 3, axis=0)[:len(self.data), :, :, :] # (T, 4, 9, S)
+        repeat_era5 = repeat_era5.reshape(repeat_era5.shape[0], -1, repeat_era5.shape[3]) # (T, 36, S)
         self.covariate = repeat_era5
 
     def __getitem__(self, index):
         station_id = index // self.tot_len
-        s_begin = index % self.tot_len
-        
-        s_end = s_begin + self.seq_len
-        r_begin = s_end - self.label_len
-        r_end = r_begin + self.label_len + self.pred_len
-        seq_x = self.data_x[s_begin:s_end, station_id:station_id+1]
-        seq_y = self.data_y[r_begin:r_end, station_id:station_id+1] # (L 1)
-        t1 = self.covariate[s_begin:s_end, :, station_id:station_id+1].squeeze()
-        t2 = self.covariate[r_begin:r_end, :, station_id:station_id+1].squeeze()
-        seq_x = np.concatenate([t1, seq_x], axis=1) # (L 37)
-        seq_y = np.concatenate([t2, seq_y], axis=1) # (L 37)
+        input_begin = index % self.tot_len
+        input_end = input_begin + self.seq_len
+        target_begin = input_end - 1
+        target_end = target_begin + self.pred_len
+
+        seq_x = self.data[input_begin:input_end, station_id, :]
+        if self.task == "wind":
+            seq_y = self.data[target_begin:target_end, station_id, 0:1]
+        elif self.task == "temp":
+            seq_y = self.data[target_begin:target_end, station_id, 1:]
+        else:
+            raise Exception
+
+        seq_x = np.concatenate([self.covariate[input_begin:input_end, :, station_id], seq_x], axis=1)
         return seq_x, seq_y
 
     def __len__(self):
-        return (len(self.data_x) - self.seq_len - self.pred_len + 1) * self.stations_num
+        # index 从0到len(dataloader) 对应于
+        # station_1(时序块1, 时序块2, ..., 时序块tot_len), ..., station_n(时序块1, 时序块2, ..., 时序块tot_len)
+        return self.tot_len * self.stations_num

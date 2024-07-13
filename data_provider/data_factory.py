@@ -11,13 +11,13 @@ def data_provider(args):
 
     shuffle_flag = True
     drop_last = True
-    batch_size = args.batch_size 
+    batch_size = args.batch_size
 
     data_set = Data(
         root_path=args.root_path,
         data_path=args.data_path,
-        size=[args.seq_len, args.label_len, args.pred_len],
-        features=args.features
+        task=args.task,
+        size=[args.seq_len, args.label_len, args.pred_len]
     )
     data_loader = DataLoader(
         data_set,
