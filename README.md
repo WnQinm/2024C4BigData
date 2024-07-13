@@ -2,7 +2,7 @@
 
 - Baseline
   - wind mse 4.4
-  - temp mse 10.2
+  - temp mse 10.3
 
 - Pyraformer
   - wind mse 3.62
@@ -16,6 +16,7 @@
     - 测多卡3090
     - 测48gL20bs20480
     - 测80gA800bs40960
+- 后期用小batch慢慢磨
 - ~~BigDataModel.Model~~
   - ~~iTransformer~~
   - fourier attention
