@@ -6,10 +6,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class Dataset_Meteorology(Dataset):
-    def __init__(self, root_path, data_path, size=None):
+    def __init__(self, root_path, data_path, task, size=None):
         self.seq_len = size[0]
         self.label_len = size[1]
         self.pred_len = size[2]
+        self.task = task
 
         self.root_path = root_path
         self.data_path = data_path
@@ -35,7 +36,12 @@ class Dataset_Meteorology(Dataset):
         target_end = target_begin + self.pred_len
 
         seq_x = self.data[input_begin:input_end, station_id, :]
-        seq_y = self.data[target_begin:target_end, station_id, :]
+        if self.task == "wind":
+            seq_y = self.data[target_begin:target_end, station_id, 0:1]
+        elif self.task == "temp":
+            seq_y = self.data[target_begin:target_end, station_id, 1:]
+        else:
+            raise Exception
 
         seq_x = np.concatenate([self.covariate[input_begin:input_end, :, station_id], seq_x], axis=1)
         return seq_x, seq_y

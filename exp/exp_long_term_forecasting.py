@@ -2,7 +2,7 @@ from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.tools import adjust_learning_rate
 from utils.loss import MSELoss
-from models.BigDataModel import Model
+from models.Pyraformer import Model
 import torch
 import torch.nn as nn
 from torch import optim
@@ -24,18 +24,24 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 os.makedirs(args.tensorboard)
             self.writer = SummaryWriter(args.tensorboard)
 
+    def get_parameter_number(self, model):
+        total_num = sum(p.numel() for p in model.parameters())
+        trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        return total_num, trainable_num
+
     def _build_model(self):
         model = Model(self.args).float()
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
+        param_num = self.get_parameter_number(model)
+        print(f"parameter total {param_num[0]} trainable {param_num[1]}")
         return model
 
     def _get_data(self):
-        data_set, data_loader = data_provider(self.args)
-        return data_set, data_loader
+        return data_provider(self.args)
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
     def _select_criterion(self) -> MSELoss:
@@ -44,7 +50,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
     # TODO 后处理(平滑之类的)
     def _get_loss(self, pred, label, criterion):
-        assert pred.shape[-1]==2 and label.shape[-1]==2
+        assert pred.shape[-1]==self.args.label_len and label.shape[-1]==self.args.label_len
         loss = criterion(pred, label)
         return loss
 
@@ -55,7 +61,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
         if self.args.ckpt_path is not None and self.args.ckpt_path != "None":
-            self.model.load_state_dict(torch.load(self.args.ckpt_path))
+            pretrained_dict = torch.load(self.args.ckpt_path)
+            model_dict = self.model.state_dict()
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if (k in model_dict and 'fc2' not in k)}
+            model_dict.update(pretrained_dict)
+            self.model.load_state_dict(model_dict)
 
         train_steps = len(train_loader)
 
@@ -78,7 +88,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             else:
                 pbar.set_description(f'Epoch {epoch+1}/{self.args.train_epochs}')
 
-            # (batch_size, seq_len, 4*9+2) (batch_size, pred_len, 2)
+            # (batch_size, seq_len, 4*9+2) (batch_size, pred_len, 1)
             for i, (batch_x, batch_y) in enumerate(train_loader):
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -87,27 +97,18 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        # outputs (batch_size, pred_len, feature_len)
-                        if self.args.output_attention:
-                            outputs = self.model(batch_x)[0]
-                        else:
-                            outputs = self.model(batch_x)
+                        outputs = self.model(batch_x)
 
                         loss = self._get_loss(outputs, batch_y, criterion)
                         train_loss.append(loss.item())
                 else:
-                    # outputs (batch_size, pred_len, feature_len)
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x)[0]
-                    else:
-                        outputs = self.model(batch_x)
-
+                    outputs = self.model(batch_x)
                     loss = self._get_loss(outputs, batch_y, criterion)
                     train_loss.append(loss.item())
 
                 if self.writer is not None:
                     self.writer.add_scalar(f'epoch{epoch}/Loss/train', loss, i)
-                    self.writer.add_scalar(f'epoch{epoch}/lr', model_optim.param_groups[0]['lr'], i)
+                    self.writer.add_scalar(f'Progress/lr', model_optim.param_groups[0]['lr'], i)
                     self.writer.add_scalar(f'Progress/step', (i+1)/train_steps, i)
 
                 if (i + 1) % self.args.eval_step == 0:
@@ -141,8 +142,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 pbar.update(1)
 
             train_loss = np.average(train_loss)
-            print(f"epoch {epoch} average loss: {train_loss}")
+            # print(f"epoch {epoch} average loss: {train_loss}")
             torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_{epoch}_last.pth')
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
+            adjust_learning_rate(model_optim, epoch, self.args)
 
         return self.model

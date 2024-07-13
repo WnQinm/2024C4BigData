@@ -14,7 +14,8 @@ def data_provider(args):
     data_set = Dataset_Meteorology(
         root_path=args.root_path,
         data_path=args.data_path,
-        size=[args.seq_len, args.label_len, args.pred_len]
+        size=[args.seq_len, args.label_len, args.pred_len],
+        task=args.train_type
     )
 
     train_size = int(len(data_set) * (1-eval_ratio))
@@ -35,5 +36,5 @@ def data_provider(args):
         num_workers=args.num_workers,
         drop_last=drop_last
         )
-    iter(train_dataloader)
+
     return train_dataloader, eval_dataloader

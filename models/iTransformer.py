@@ -13,6 +13,9 @@ class iTransformer(nn.Module):
         super(iTransformer, self).__init__()
         self.seq_len = configs.seq_len
         self.output_attention = configs.output_attention
+        self.task = configs.train_type
+        self.pred_len = configs.pred_len
+        self.label_len = configs.label_len
 
         # Embedding
         self.enc_embedding = DataEmbedding(configs.seq_len, configs.d_model, configs.dropout)
@@ -34,7 +37,30 @@ class iTransformer(nn.Module):
         )
 
         # Decoder
-        self.projection = nn.Linear(configs.d_model, configs.seq_len, dtype=float)
+        self.lstm = nn.LSTM(input_size=configs.feature_len,
+                            hidden_size=configs.feature_len,
+                            num_layers=configs.lstm_layer_num,
+                            batch_first=True,
+                            dropout=configs.dropout)
+
+        self.alpha = nn.Parameter(torch.tensor(0.8), requires_grad=False)
+
+    def projection(self, x):
+        result = []
+        # x (batch_size, d_model, feature_len)
+        o, h = self.lstm(x)
+        o = o[:, -1:, :]
+        for _ in range(self.pred_len):
+            o, h = self.lstm(o, h)
+            result.append(o)
+        x = torch.cat(result, dim=1)
+        return x
+
+    def exponential_smoothing(self, series):
+        # batch_size, pred_len, 1
+        for i in range(1, series.shape[1]):
+            series[:, i, :] = (1 - self.alpha) * series[:, i, :] + self.alpha * series[:, i-1, :]
+        return series
 
     def forecast(self, x_enc: torch.Tensor):
         # Normalization from Non-stationary Transformer
@@ -45,14 +71,20 @@ class iTransformer(nn.Module):
 
         enc_out = self.enc_embedding(x_enc, 1)
         enc_out, attns = self.encoder(enc_out, attn_mask=None)      # (batch_size, feature_len, d_model)
-        dec_out = self.projection(enc_out).permute(0, 2, 1)         # (batch_size, seq_len, feature_len)
+        enc_out = enc_out.permute(0, 2, 1)
+        dec_out = self.projection(enc_out)                        # (batch_size, pred_len, feature_len)
 
         # De-Normalization from Non-stationary Transformer
-        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
-        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
         return dec_out
 
     def forward(self, x_enc):
-        # (batch_size, seq_len, feature_len)
+        # (batch_size, pred_len, feature_len)
         dec_out = self.forecast(x_enc)
-        return dec_out
+        if self.task == "wind":
+            return self.exponential_smoothing(dec_out[..., -2:-1])
+        elif self.task == "temp":
+            return self.exponential_smoothing(dec_out[..., -1:])
+        else:
+            raise Exception
