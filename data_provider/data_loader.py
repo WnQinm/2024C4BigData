@@ -40,6 +40,8 @@ class Dataset_Meteorology(Dataset):
             seq_y = self.data[target_begin:target_end, station_id, 0:1]
         elif self.task == "temp":
             seq_y = self.data[target_begin:target_end, station_id, 1:]
+        elif self.task == "both":
+            seq_y = self.data[target_begin:target_end, station_id, :]
         else:
             raise Exception
 

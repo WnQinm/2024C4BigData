@@ -1,6 +1,7 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.tools import adjust_learning_rate
+from utils.loss import MSELoss
 import torch
 import torch.nn as nn
 from torch import optim
@@ -43,11 +44,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        criterion = MSELoss()
         return criterion
 
     def train(self, setting):
@@ -91,6 +92,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                             outputs = outputs[:, :, -2:-1]
                         elif self.args.task == 'temp':
                             outputs = outputs[:, :, -1:]
+                        elif self.args.task == 'both':
+                            outputs = outputs[:, :, -2:]
 
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
@@ -104,6 +107,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         outputs = outputs[:, :, -2:-1]
                     elif self.args.task == 'temp':
                         outputs = outputs[:, :, -1:]
+                    elif self.args.task == 'both':
+                        outputs = outputs[:, :, -2:]
 
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
@@ -130,6 +135,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 pbar.update(1)
 
             torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint.pth')
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
+            # adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         return self.model
