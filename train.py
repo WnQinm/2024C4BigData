@@ -53,6 +53,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
+    parser.add_argument('--gradCum', type=int, default=0, help="gradient accumulation")
     parser.add_argument('--tensorboard', type=str, default="/root/tf-logs/bigdata/8")
 
     # GPU

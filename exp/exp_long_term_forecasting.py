@@ -118,19 +118,20 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     self.writer.add_scalar(f'Progress/lr', model_optim.param_groups[0]['lr'], i)
                     self.writer.add_scalar(f'Progress/step', (i+1)/train_steps, i)
 
-                if (i + 1) % 10 == 0:
+                if (i + 1) % (10*max(1, self.args.gradCum)) == 0:
                     mean_loss = np.mean(train_loss[-10:])
                     if best_loss is None or mean_loss<best_loss:
                         best_loss = mean_loss
                         torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_best.pth')
 
-                if self.args.use_amp:
-                    scaler.scale(loss).backward()
-                    scaler.step(model_optim)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    model_optim.step()
+                if self.args.gradCum > 0 and ((i+1)%self.args.gradCum==0 or (i+1)==train_steps):
+                    if self.args.use_amp:
+                        scaler.scale(loss).backward()
+                        scaler.step(model_optim)
+                        scaler.update()
+                    else:
+                        loss.backward()
+                        model_optim.step()
 
                 pbar.update(1)
 
