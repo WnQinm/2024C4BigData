@@ -44,11 +44,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
+        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
     def _select_criterion(self):
-        criterion = MSELoss()
+        criterion = MSELoss(self.args.gradCum)
         return criterion
 
     def train(self, setting):
@@ -63,9 +63,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         criterion = self._select_criterion()
         best_loss = None
 
-        if self.args.use_amp:
-            scaler = torch.cuda.amp.GradScaler()
-
         for epoch in range(self.args.train_epochs):
             iter_count = 0
             train_loss = []
@@ -76,42 +73,24 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             self.model.train()
             for i, (batch_x, batch_y) in enumerate(train_loader):
                 iter_count += 1
-                model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
                 # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        if self.args.output_attention:
-                            outputs = self.model(batch_x)[0]
-                        else:
-                            outputs = self.model(batch_x)
-
-                        if self.args.task == 'wind':
-                            outputs = outputs[:, :, -2:-1]
-                        elif self.args.task == 'temp':
-                            outputs = outputs[:, :, -1:]
-                        elif self.args.task == 'both':
-                            outputs = outputs[:, :, -2:]
-
-                        loss = criterion(outputs, batch_y)
-                        train_loss.append(loss.item())
+                if self.args.output_attention:
+                    outputs = self.model(batch_x)[0]
                 else:
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x)[0]
-                    else:
-                        outputs = self.model(batch_x)
+                    outputs = self.model(batch_x)
 
-                    if self.args.task == 'wind':
-                        outputs = outputs[:, :, -2:-1]
-                    elif self.args.task == 'temp':
-                        outputs = outputs[:, :, -1:]
-                    elif self.args.task == 'both':
-                        outputs = outputs[:, :, -2:]
+                if self.args.task == 'wind':
+                    outputs = outputs[:, :, -2:-1]
+                elif self.args.task == 'temp':
+                    outputs = outputs[:, :, -1:]
+                elif self.args.task == 'both':
+                    outputs = outputs[:, :, -2:]
 
-                    loss = criterion(outputs, batch_y)
-                    train_loss.append(loss.item())
+                loss = criterion(outputs, batch_y)
+                train_loss.append(loss.item()*max(1, self.args.gradCum))
 
                 if self.writer is not None:
                     self.writer.add_scalar(f'epoch{epoch}/Loss/train', train_loss[-1], i)
@@ -124,15 +103,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         best_loss = mean_loss
                         torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_best.pth')
 
+                loss.backward()
                 if self.args.gradCum > 0 and ((i+1)%self.args.gradCum==0 or (i+1)==train_steps):
-                    if self.args.use_amp:
-                        scaler.scale(loss).backward()
-                        scaler.step(model_optim)
-                        scaler.update()
-                    else:
-                        loss.backward()
-                        model_optim.step()
-
+                    model_optim.step()
+                    model_optim.zero_grad()
                 pbar.update(1)
 
             torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint.pth')
