@@ -51,6 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     parser.add_argument('--lradj', type=str, default='cosine', help='adjust learning rate')
     parser.add_argument('--gradCum', type=int, default=2, help="gradient accumulation")
+    parser.add_argument('--ema', type=float, default=0, help="use ema when training model, usually after getting a good model, set 0 or 1 to close it")
     parser.add_argument('--tensorboard', type=str, default="/root/tf-logs/both/3")
 
     # GPU

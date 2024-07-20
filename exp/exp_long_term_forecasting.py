@@ -1,5 +1,6 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
+from utils.model_ema import EMA
 from utils.tools import adjust_learning_rate
 from utils.loss import MSELoss
 import torch
@@ -31,6 +32,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     def _build_model(self):
         model = self.model_dict[self.args.model].Model(self.args).float()
         if self.args.ckpt_path is not None and self.args.ckpt_path != "None":
+            print(f"load model: {self.args.ckpt_path}")
             pretrained_dict = torch.load(self.args.ckpt_path)
             model.load_state_dict(pretrained_dict)
         if self.args.use_multi_gpu and self.args.use_gpu:
@@ -62,6 +64,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
         best_loss = None
+
+        if 0 < self.args.ema < 1:
+            ema = EMA(self.model, beta=self.args.ema, update_after_step=100, update_every=10)
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -101,11 +106,16 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     mean_loss = np.mean(train_loss[-10:])
                     if best_loss is None or mean_loss<best_loss:
                         best_loss = mean_loss
-                        torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_best.pth')
+                        if 0 < self.args.ema < 1:
+                            torch.save(ema.ema_model.state_dict(), save_path + '/' + f'checkpoint_best.pth')
+                        else:
+                            torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint_best.pth')
 
                 loss.backward()
-                if self.args.gradCum > 0 and ((i+1)%self.args.gradCum==0 or (i+1)==train_steps):
+                if (i+1)%self.args.gradCum==0 or (i+1)==train_steps:
                     model_optim.step()
+                    if 0 < self.args.ema < 1:
+                        ema.update()
                     model_optim.zero_grad()
                 pbar.update(1)
 
