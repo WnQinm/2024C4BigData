@@ -34,7 +34,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if self.args.ckpt_path is not None and self.args.ckpt_path != "None":
             print(f"load model: {self.args.ckpt_path}")
             pretrained_dict = torch.load(self.args.ckpt_path)
-            model.load_state_dict(pretrained_dict)
+            model.load_state_dict(pretrained_dict, strict=False)
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         param_num = self.get_parameter_number(model)
@@ -94,8 +94,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 elif self.args.task == 'both':
                     outputs = outputs[:, :, -2:]
 
-                loss = criterion(outputs, batch_y)
-                train_loss.append(loss.item()*max(1, self.args.gradCum))
+                # loss = criterion(outputs, batch_y)
+                # train_loss.append(loss.item()*max(1, self.args.gradCum))
+                loss, mse_loss = criterion(outputs, batch_y)
+                train_loss.append(mse_loss)
 
                 if self.writer is not None:
                     self.writer.add_scalar(f'epoch{epoch}/Loss/train', train_loss[-1], i)
