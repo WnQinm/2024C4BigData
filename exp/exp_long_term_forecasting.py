@@ -110,6 +110,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 pbar.update(1)
 
             torch.save(self.model.state_dict(), save_path + '/' + f'checkpoint.pth')
-            # adjust_learning_rate(model_optim, epoch + 1, self.args)
+            adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         return self.model

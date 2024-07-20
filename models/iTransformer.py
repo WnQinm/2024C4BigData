@@ -33,7 +33,6 @@ class Model(nn.Module):
             norm_layer=torch.nn.LayerNorm(configs.d_model)
         )
         # Decoder
-
         self.projection = nn.Linear(configs.d_model, configs.pred_len, bias=True)
 
     def forecast(self, x_enc):

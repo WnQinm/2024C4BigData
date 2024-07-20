@@ -12,4 +12,4 @@ class MSELoss(nn.Module):
     def forward(self, input:Tensor, target:Tensor) -> Tensor:
         a = mse_loss(input[..., -2], target[..., -2], reduction='mean')
         b = mse_loss(input[..., -1], target[..., -1], reduction='mean')
-        return (a + b) / (2 * self.gradcum)
+        return (a + b) / (2 * max(1, self.gradcum))
